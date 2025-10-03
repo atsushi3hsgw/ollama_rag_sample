@@ -1,0 +1,13 @@
+.*/
+storage/
+
+!.gitignore
+!.gitattributes
+!.env.example
+!.git/
+!.github/
+!.devcontainer/
+
+__pycache__/
+*.py[cod]
+*$py.class

@@ -1,0 +1,28 @@
+services:
+  ollama:
+    build: 
+      context: .
+      dockerfile: Dockerfile.ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  chatbot:
+    build: 
+      context: .
+      dockerfile: Dockerfile.chatbot
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api
+      - EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+    command: streamlit run /app/app.py --server.port=8501 --server.address=0.0.0.0
+
+volumes:
+  ollama_data:

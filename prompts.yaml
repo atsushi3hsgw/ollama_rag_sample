@@ -1,0 +1,58 @@
+
+ELYZA:
+  template: |
+    以下の文脈も参考にして、質問に答えてください。
+
+    文脈:
+    {{context}}
+
+    質問:
+    {{query}}
+
+  empty_context: |
+    質問に答えてください。
+
+    質問:
+    {{query}}
+  
+  query_expansion: |
+    以下の質問を、検索に適した形で意味的に拡張してください。
+
+    質問: {{query}}
+
+llama3:
+  template: |
+    <|system|>
+    You are a helpful assistant.
+
+    <|user|>
+    Context:
+    {{context}}
+
+    Question:
+    {{query}}
+
+  empty_context: |
+    <|system|>
+    You are a helpful assistant.
+
+    <|user|>
+    Question:
+    {{query}}
+
+mistral:
+  template: |
+    You are a helpful assistant.
+    Answer the following question using the provided context.
+
+    Context:
+    {{context}}
+
+    Question:
+    {{query}}
+  
+  empty_context: |
+    You are a helpful assistant.
+
+    Question:
+    {{query}}
