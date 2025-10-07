@@ -40,6 +40,40 @@ llama3:
     Question:
     {{query}}
 
+gemma3:
+  template: |
+    <|system|>
+    あなたは親切で有能なアシスタントです。
+
+    <|user|>
+    以下の文脈を参考にして、質問に答えてください。
+
+    文脈:
+    {{context}}
+
+    質問:
+    {{query}}
+
+  empty_context: |
+    <|system|>
+    あなたは親切で有能なアシスタントです。
+
+    <|user|>
+    以下の質問に答えてください。
+
+    Question:
+    {{query}}
+
+  query_expansion: |
+    <|system|>
+    あなたは親切で有能なアシスタントです。
+
+    <|user|>
+    以下の質問を、検索に適した形で意味的に拡張してください。拡張した質問だけを答えて下さい。
+
+    質問:
+    {{query}}
+
 mistral:
   template: |
     You are a helpful assistant.

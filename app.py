@@ -34,7 +34,7 @@ def build_prompt(query: str, context: str, model: str, templates: dict) -> str:
         return template.replace("{{query}}", query)
 
 load_dotenv()
-rag_index_dir = os.path.join(".", "./rag_index_dir")
+rag_index_dir = os.path.join(".", ".rag_index_dir")
 rag_index_path = os.path.join(rag_index_dir, "rag_index.pkl")
 
 # Load embedding model
