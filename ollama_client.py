@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
 def query_ollama(prompt: str, model: str = "llama3") -> str:
     """
@@ -13,7 +13,7 @@ def query_ollama(prompt: str, model: str = "llama3") -> str:
         "model": model,
         "prompt": prompt
     }
-    response = requests.post(f"{OLLAMA_URL}/generate", json=payload, stream=True)
+    response = requests.post(f"{OLLAMA_URL}/api/generate", json=payload, stream=True)
 
     full_text = ""
     for line in response.iter_lines():
@@ -32,7 +32,7 @@ def get_available_models():
     Get a list of available models from the Ollama
     """
     try:
-        response = requests.get(f"{OLLAMA_URL}/tags")
+        response = requests.get(f"{OLLAMA_URL}/api/tags")
         tags = response.json().get("models", [])
         return [tag["name"] for tag in tags]
     except Exception as e:

@@ -1,5 +1,5 @@
 # Use official Python image
-FROM python:3.11-slim
+FROM python:3.11
 
 # Set working directory
 WORKDIR /app
@@ -10,8 +10,14 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# (Optional but effective) Precompile Python bytecode
+RUN python -m compileall /usr/local/lib/python3.11
+
+# (Optional) Warm up heavy imports to avoid slow first-time imports
+RUN echo "import langchain, langchain_community, langchain_huggingface" > /tmp/warmup.py && python /tmp/warmup.py
+
 # Copy application code
-COPY . .
+#COPY . .
 
 # Expose Streamlit port
 EXPOSE 8501

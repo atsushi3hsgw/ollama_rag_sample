@@ -5,3 +5,9 @@ faiss-cpu
 pdfplumber
 python-dotenv
 watchdog
+langchain
+langchain_community
+langchain-ollama 
+langchain-huggingface
+langsmith
+pypdf

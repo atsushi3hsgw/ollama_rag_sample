@@ -1,0 +1,38 @@
+query_expansion_messages:
+  - role: system
+    content: |
+      あなたは親切で有能なアシスタントです。
+  - role: human
+    content: |
+      以下の質問を、検索に適した形で意味的に拡張してください。
+      元の質問の意味を変えないでください。
+      元の質問で十分に情報が得られる場合は、元の質問をそのまま返してください。
+      意味的に拡張した質問だけを答えて下さい。
+
+      質問:
+      {query}
+
+rag_prompt_messages:
+  - role: system
+    content: |
+      あなたは親切で有能なアシスタントです。
+  - role: human
+    content: |
+      以下の文脈も参考にして、質問に答えてください。文脈が不十分な場合は、わからないと答えてください。
+
+      文脈:
+      {context}
+
+      質問:
+      {query}
+
+simple_prompt_messages:
+  - role: system
+    content: |
+      あなたは親切で有能なアシスタントです。
+  - role: human
+    content: |
+      以下の質問に答えてください。
+
+      質問:
+      {query}

@@ -15,15 +15,20 @@ services:
       dockerfile: Dockerfile.chatbot
     ports:
       - "8501:8501"
+    working_dir: /app
     volumes:
       - .:/app
     depends_on:
       - ollama
     environment:
-      - OLLAMA_URL=http://ollama:11434/api
+      - OLLAMA_URL=http://ollama:11434
       - EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      - RAG_INDEX_DIR=/app/.rag_index_dir
+      - PROMPTS_PATH=/app/prompts_langchain.yml
+      - LOG_LEVEL=DEBUG
       - PYTHONUNBUFFERED=1
-    command: streamlit run /app/app.py --server.port=8501 --server.address=0.0.0.0
+      - STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+    command: streamlit run app_langchain.py --server.port=8501 --server.address=0.0.0.0
 
 volumes:
   ollama_data:
