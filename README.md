@@ -2,6 +2,12 @@
 
 このリポジトリは OLLAMA とローカル埋め込みを組み合わせた RAG（Retrieval-Augmented Generation）実験サンプルです。
 
+docker コンテナで動作します。
+```mermaid
+graph TD;
+    A[chatbot container]　--- B[ollama container];
+```
+
 ## 概要
 
 - フロントエンド: Streamlit アプリ (app.py)  

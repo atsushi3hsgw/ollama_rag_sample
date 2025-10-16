@@ -1,4 +1,5 @@
 import os
+import math
 from dotenv import load_dotenv
 import logging
 
@@ -9,10 +10,12 @@ import streamlit as st
 
 from langchain_ollama import ChatOllama
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.embeddings import Embeddings
 
 from langchain_core.vectorstores import VectorStore
+from langchain_community.cross_encoders import BaseCrossEncoder
 from langchain_community.vectorstores import FAISS
 from langchain_community.vectorstores.faiss import DistanceStrategy
 
@@ -27,11 +30,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from ollama_client import get_available_models, OLLAMA_URL
 
+load_dotenv()
+
 RAG_INDEX_DIR = os.getenv("RAG_INDEX_DIR", ".rag_index_dir")
 RAG_INDEX_PATH = os.path.join(RAG_INDEX_DIR, "rag_index")
 PROMPTS_PATH = os.getenv("PROMPTS_PATH", "prompts_langchain.yml")
 
-load_dotenv()
 def setup_logger(name=__name__):
     """
     Setup logger with environment variable LOG_LEVEL
@@ -72,6 +76,16 @@ def load_embedding_model() -> Embeddings:
     logger.info("Embedding model loaded")
     return embedding
 
+def load_cross_encoder_model() -> HuggingFaceCrossEncoder:
+    """
+    Cache and load cross-encoder models
+    """
+    _model_name = os.getenv("CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+    logger.info(f"Loading cross-encoder model: {_model_name}")
+    cross_encoder = HuggingFaceCrossEncoder(model_name=_model_name)
+    logger.info("Cross-encoder model loaded")
+    return cross_encoder
+
 def init_vector_store(_embedder) -> VectorStore:
     """
     Load FAISS vector store if exists
@@ -92,23 +106,27 @@ def init_vector_store(_embedder) -> VectorStore:
     logger.info("Vector store initialized")
     return vector_store
             
-def retrieve_with_score(vector_store: VectorStore, query: str, k: int=5, **kwargs: any)-> List[Document]:
+def retrieve_with_score(
+    vector_store: VectorStore,
+    query: str,
+    top_k: int=5,
+    similarity_threshold: float=0.5,
+    **kwargs:Any)-> List[Document]:
     """
     Retrieve documents with similarity scores.
     When creating a Retriever with as_retriever(), the document score cannot be retrieved.
     """
-    
-    logger.debug(f"Retrieving top {k} documents for query: {query}")
+    logger.debug(f"Retrieving top {top_k} similarity_threshold{similarity_threshold} documents for query: {query}")
     logger.debug(f"Additional kwargs: {kwargs}")
     
     # Some VectorStores have similarity_search_with_score(), others do not
     if hasattr(vector_store, "similarity_search_with_score"):
         results = vector_store.similarity_search_with_score(
-            query, k=k, **kwargs
+            query, k=top_k, score_threshold=similarity_threshold, **kwargs
         )
     else:
         # Fallback: get docs only, then simulate score = 1.0
-        docs = vector_store.similarity_search(query, k=k, **kwargs)
+        docs = vector_store.similarity_search(query, k=top_k, **kwargs)
         results = [(doc, 1.0) for doc in docs]
     
     docs = []
@@ -117,10 +135,55 @@ def retrieve_with_score(vector_store: VectorStore, query: str, k: int=5, **kwarg
         docs.append(doc)
     
     logger.debug(f"Retrieved {len(docs)} documents")
-    logger.debug(f"Documents: {docs}")
+    logger.debug(f"Retrieved Documents: {[{'page_content': doc.page_content[:100], 'metadata': doc.metadata} for doc in docs]}")
     
-    return docs
+    return docs[:top_k]
 
+def retrieve_with_rerank(
+    vector_store: VectorStore,
+    reranker: BaseCrossEncoder,
+    query: str,
+    top_k: int = 30,
+    similarity_threshold: float = 0.5,
+    rerank_k: int = 5,
+    rerank_similarity_threshold: float = 0.5,
+    **kwargs:Any
+):
+    """
+    Retrieve documents with initial vector search, then rerank with cross-encoder.
+    """
+    logger.debug(f"Retrieving with rerank: top_k={top_k}, similarity_threshold={similarity_threshold} rerank_k={rerank_k}, rerank_similarity_threshold={rerank_similarity_threshold}")
+    logger.debug(f"Additional kwargs: {kwargs}")
+    
+    docs = retrieve_with_score(vector_store, query, 
+        top_k=top_k, similarity_threshold=similarity_threshold, **kwargs)
+  
+    def sigmoid(x: float) -> float:
+        return 1 / (1 + math.exp(-x))  
+
+    reranked = []
+    if docs:
+        # Prepare text pairs for reranking
+        text_pairs = [(query, doc.page_content) for doc in docs]
+        scores = reranker.score(text_pairs)
+        scores = scores.tolist() if not isinstance(scores, list) else scores
+        scores_prob = [sigmoid(score_raw) for score_raw in scores]
+        
+        for doc, score_prob in zip(docs, scores_prob):
+            if score_prob >= rerank_similarity_threshold:
+                doc.metadata["rerank_score"] = score_prob
+                reranked.append(doc)
+        
+        # Sort by rerank_score descending
+        reranked.sort(key=lambda x: x.metadata["rerank_score"], reverse=True)
+        
+        # Limit to rerank_k
+        reranked = reranked[:rerank_k]
+        logger.debug(f"Reranked to {len(reranked)} documents after applying final threshold {rerank_similarity_threshold}")
+        logger.debug(f"Reranked Documents: {[{'page_content': doc.page_content[:100], 'metadata': doc.metadata} for doc in docs]}")
+    
+    return reranked
+    
 def format_docs(docs: List[Document]) -> str:
     """
     Format documents for prompt context
@@ -132,17 +195,56 @@ def format_docs(docs: List[Document]) -> str:
         source = os.path.basename(doc.metadata.get("source", "NA"))
         score = doc.metadata.get("score", None)
         score_str = f" (score={score:.3f})" if score is not None else ""
+        rerank_score = doc.metadata.get("rerank_score", None)
+        if rerank_score is not None:
+            score_str += f" (rerank_score={rerank_score:.3f})"
         formatted.append(f"Source: {source}{score_str}\nContent: {doc.page_content}")
     return "\n\n".join(formatted)
 
-def build_rag_chain(messages:List[tuple[str, str]], vector_store: VectorStore, threshold: int, llm: BaseChatModel):
+def build_rag_chain(
+    messages:List[tuple[str, str]], 
+    llm: BaseChatModel,
+    use_context: bool = False,
+    vector_store: VectorStore = None,   
+    top_k: int = 30,
+    similarity_threshold = 0.3,
+    use_reranking: bool = False,
+    reranker: BaseCrossEncoder = None,
+    rerank_k: int = 5,
+    rerank_similarity_threshold: float = 0.8,
+    ):
+    
     """
     Build a complete RAG (Retrieval-Augmented Generation) chain.
     Combines retriever, formatter, prompt, and LLM.
     """
     prompt = ChatPromptTemplate.from_messages(messages)
+    
+    def retriever(x: Dict[str, Any]) -> List[Document]:
+        return retrieve_with_score(vector_store, x["query"], 
+            top_k=top_k, similarity_threshold=similarity_threshold)
+        
+    def retriever_rerank(x: Dict[str, Any]) -> List[Document]:
+        return retrieve_with_rerank(vector_store, reranker, x["query"], 
+            top_k=top_k, similarity_threshold= similarity_threshold, 
+            rerank_k=rerank_k, rerank_similarity_threshold=rerank_similarity_threshold)
+    
+    def retriever_noop(x: Dict[str, Any]) -> List[Document]:
+        return []
+    
+    if use_context and vector_store:
+        if use_reranking and reranker:
+            logger.info("Building RAG chain with context and reranking")
+            retriever_fn = retriever_rerank
+        else:
+            logger.info("Building RAG chain with context without reranking")
+            retriever_fn = retriever
+    else:
+        logger.info("Building chain without context retrieval")
+        retriever_fn = retriever_noop
+
     chain = RunnableMap({
-        "context": (lambda x: retrieve_with_score(vector_store, x["query"], score_threshold=threshold)), 
+        "context": (lambda x: retriever_fn(x)), 
         "query": RunnablePassthrough(),
     }) | RunnableMap({
         "context": (lambda x: format_docs(x["context"])),
@@ -182,6 +284,9 @@ if "llm" not in st.session_state:
 if "vector_store" not in st.session_state:
     embedding = load_embedding_model()
     st.session_state.vector_store = init_vector_store(embedding)
+    
+if "cross_encoder" not in st.session_state:
+    st.session_state.cross_encoder = load_cross_encoder_model()
 
 if "prompts" not in st.session_state:
     st.session_state.prompts = load_prompt_messages(PROMPTS_PATH)
@@ -199,17 +304,33 @@ simple_prompt_messages = st.session_state.prompts.get("simple_prompt_messages", 
     ("user", "Answer the following question: {query}")
 ])
 
-st.title("RAG Chatbot with File Upload (LangChain ver.)")
+use_context = False
+use_expansion = False
+similarity_threshold = 0.3
+top_k = 10
+use_reranking = False
+rerank_threshold = 0.8
+rerank_k = 5
 
+st.title("RAG Chatbot with File Upload (LangChain ver.)")
 with st.sidebar:
     st.header("Configs")
 
     model_list = get_model_list()
     selected_model = st.selectbox("model", model_list)
 
+    use_expansion = st.checkbox("Query expansion", value=True)
+    
     use_context = st.checkbox("RAG search (retrieve_context)", value=True)
-    use_expansion = st.checkbox("Use query expansion", value=True)
-    similarity_threshold = st.slider("Similarity threshold", min_value=0.0, max_value=1.0, value=0.50, step=0.01)
+    if use_context:
+        similarity_threshold = st.slider("Similarity threshold", min_value=0.0, max_value=1.0, value=0.30, step=0.01)
+        top_k = st.slider("Top K documents to retrieve", min_value=1, max_value=20, value=10, step=1)
+    
+        use_reranking = st.checkbox("Re-rank retrieved documents", value=False)
+        if use_reranking:
+            rerank_threshold = st.slider("Re-rank similarity threshold", min_value=0.0, max_value=1.0, value=0.80, step=0.01)
+            rerank_k = st.slider("Re-rank top K documents", min_value=1, max_value=20, value=5, step=1)
+    
     uploaded_files = st.file_uploader("Upload one or more txt/PDFs", type=["pdf", "txt"], accept_multiple_files=True)
 
     if uploaded_files and st.button("Add Index"):
@@ -265,8 +386,18 @@ if user_input := st.chat_input("Ask a question..."):
         response_container = st.chat_message("ai").empty()
         full_response = ""
         
-        messages = rag_prompt_messages if use_context else simple_prompt_messages
-        chain = build_rag_chain(messages, st.session_state.vector_store, similarity_threshold, llm)        
+        messages = rag_prompt_messages if use_context else simple_prompt_messages     
+        chain = build_rag_chain(
+            messages, llm, 
+            use_context,
+            st.session_state.vector_store, 
+            top_k=top_k,
+            similarity_threshold=similarity_threshold,
+            use_reranking=use_reranking,
+            reranker=st.session_state.cross_encoder,
+            rerank_k=rerank_k,
+            rerank_similarity_threshold=rerank_threshold
+        )
         for chunk in chain.stream({"query": final_query}):
             full_response += chunk
             response_container.markdown(full_response)
