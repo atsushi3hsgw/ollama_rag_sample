@@ -30,8 +30,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from ollama_client import get_available_models, OLLAMA_URL
 
-load_dotenv()
+DEFAULT_SIMILARITY_THRESHOLD = 0.3
+DEFAULT_TOP_K = 10
+DEFAULT_RERANK_THRESHOLD = 0.8
+DEFAULT_RERANK_K = 5
 
+load_dotenv()
 RAG_INDEX_DIR = os.getenv("RAG_INDEX_DIR", ".rag_index_dir")
 RAG_INDEX_PATH = os.path.join(RAG_INDEX_DIR, "rag_index")
 PROMPTS_PATH = os.getenv("PROMPTS_PATH", "prompts_langchain.yml")
@@ -63,6 +67,7 @@ def get_model_list() -> List[str]:
     """
     return get_available_models()
 
+@st.cache_resource
 def load_embedding_model() -> Embeddings:
     """
     Cache and load embedded models
@@ -76,6 +81,7 @@ def load_embedding_model() -> Embeddings:
     logger.info("Embedding model loaded")
     return embedding
 
+@st.cache_resource
 def load_cross_encoder_model() -> HuggingFaceCrossEncoder:
     """
     Cache and load cross-encoder models
@@ -86,6 +92,7 @@ def load_cross_encoder_model() -> HuggingFaceCrossEncoder:
     logger.info("Cross-encoder model loaded")
     return cross_encoder
 
+@st.cache_resource
 def init_vector_store(_embedder) -> VectorStore:
     """
     Load FAISS vector store if exists
@@ -166,6 +173,7 @@ def retrieve_with_rerank(
         # Prepare text pairs for reranking
         text_pairs = [(query, doc.page_content) for doc in docs]
         scores = reranker.score(text_pairs)
+        logger.debug(f"Reranker raw scores: {scores}")
         scores = scores.tolist() if not isinstance(scores, list) else scores
         scores_prob = [sigmoid(score_raw) for score_raw in scores]
         
@@ -180,7 +188,7 @@ def retrieve_with_rerank(
         # Limit to rerank_k
         reranked = reranked[:rerank_k]
         logger.debug(f"Reranked to {len(reranked)} documents after applying final threshold {rerank_similarity_threshold}")
-        logger.debug(f"Reranked Documents: {[{'page_content': doc.page_content[:100], 'metadata': doc.metadata} for doc in docs]}")
+        logger.debug(f"Reranked Documents: {[{'page_content': doc.page_content[:100], 'metadata': doc.metadata} for doc in reranked]}")
     
     return reranked
     
@@ -306,11 +314,11 @@ simple_prompt_messages = st.session_state.prompts.get("simple_prompt_messages", 
 
 use_context = False
 use_expansion = False
-similarity_threshold = 0.3
-top_k = 10
+similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD
+top_k = DEFAULT_TOP_K
 use_reranking = False
-rerank_threshold = 0.8
-rerank_k = 5
+rerank_threshold = DEFAULT_RERANK_THRESHOLD
+rerank_k = DEFAULT_RERANK_K
 
 st.title("RAG Chatbot with File Upload (LangChain ver.)")
 with st.sidebar:
@@ -321,38 +329,45 @@ with st.sidebar:
 
     use_expansion = st.checkbox("Query expansion", value=True)
     
-    use_context = st.checkbox("RAG search (retrieve_context)", value=True)
+    use_context = st.checkbox("Rretrieve documents)", value=True)
     if use_context:
-        similarity_threshold = st.slider("Similarity threshold", min_value=0.0, max_value=1.0, value=0.30, step=0.01)
-        top_k = st.slider("Top K documents to retrieve", min_value=1, max_value=20, value=10, step=1)
+        similarity_threshold = st.slider("Similarity threshold", 
+            min_value=0.0, max_value=1.0, value=DEFAULT_SIMILARITY_THRESHOLD, step=0.01)
+        top_k = st.slider("Top K documents to retrieve", 
+            min_value=1, max_value=20, value=DEFAULT_TOP_K, step=1)
     
         use_reranking = st.checkbox("Re-rank retrieved documents", value=False)
         if use_reranking:
-            rerank_threshold = st.slider("Re-rank similarity threshold", min_value=0.0, max_value=1.0, value=0.80, step=0.01)
-            rerank_k = st.slider("Re-rank top K documents", min_value=1, max_value=20, value=5, step=1)
+            rerank_threshold = st.slider("Re-rank similarity threshold", 
+                min_value=0.0, max_value=1.0, value=DEFAULT_RERANK_THRESHOLD, step=0.01)
+            rerank_k = st.slider("Re-rank top K documents", 
+                min_value=1, max_value=20, value=DEFAULT_TOP_K, step=1)
     
     uploaded_files = st.file_uploader("Upload one or more txt/PDFs", type=["pdf", "txt"], accept_multiple_files=True)
 
-    if uploaded_files and st.button("Add Index"):
-        with st.spinner("Indexing documents..."):
-            docs = []
-            for file in uploaded_files:
-                documents_dir = os.path.join(RAG_INDEX_DIR, "documents")
-                os.makedirs(documents_dir, exist_ok=True)
-                document_path = os.path.join(documents_dir, file.name)
-                with open(document_path, "wb") as f:
-                    f.write(file.getvalue())
+    if uploaded_files:
+        chunk_size = st.slider("chunk size", min_value=100, max_value=1000, value=500, step=10)
+        chunk_overlap = st.slider("chunk overlap", min_value=10, max_value=1000, value=200, step=10)
+        if st.button("Add Documents"):
+            with st.spinner("Indexing documents..."):
+                docs = []
+                for file in uploaded_files:
+                    documents_dir = os.path.join(RAG_INDEX_DIR, "documents")
+                    os.makedirs(documents_dir, exist_ok=True)
+                    document_path = os.path.join(documents_dir, file.name)
+                    with open(document_path, "wb") as f:
+                        f.write(file.getvalue())
                 
-                loader = PyPDFLoader(document_path) if file.name.endswith(".pdf") else TextLoader(document_path, autodetect_encoding=True)
-                docs.extend(loader.load())
+                    loader = PyPDFLoader(document_path) if file.name.endswith(".pdf") else TextLoader(document_path, autodetect_encoding=True)
+                    docs.extend(loader.load())
 
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=200)
-            chunks = text_splitter.split_documents(docs)
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+                chunks = text_splitter.split_documents(docs)
 
-            st.session_state.vector_store.add_documents(chunks)
-            os.makedirs(RAG_INDEX_DIR, exist_ok=True)           
-            st.session_state.vector_store.save_local(RAG_INDEX_PATH)
-            st.success(f"{len(uploaded_files)} files indexed successfully!")
+                st.session_state.vector_store.add_documents(chunks)
+                os.makedirs(RAG_INDEX_DIR, exist_ok=True)           
+                st.session_state.vector_store.save_local(RAG_INDEX_PATH)
+                st.success(f"{len(uploaded_files)} files indexed successfully!")
 
 if st.session_state.model != selected_model or st.session_state.llm is None:
     # Initialize LLM if model changed 
