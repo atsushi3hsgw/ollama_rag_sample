@@ -325,29 +325,31 @@ with st.sidebar:
     st.header("Configs")
 
     model_list = get_model_list()
-    selected_model = st.selectbox("model", model_list)
+    selected_model = st.selectbox("Select model", model_list)
 
     use_expansion = st.checkbox("Query expansion", value=True)
     
-    use_context = st.checkbox("Rretrieve documents)", value=True)
+    use_context = st.checkbox("Rretrieve documents", value=True)
     if use_context:
-        similarity_threshold = st.slider("Similarity threshold", 
-            min_value=0.0, max_value=1.0, value=DEFAULT_SIMILARITY_THRESHOLD, step=0.01)
-        top_k = st.slider("Top K documents to retrieve", 
-            min_value=1, max_value=20, value=DEFAULT_TOP_K, step=1)
+        similarity_threshold = st.number_input("Similarity threshold", 
+                min_value=0.0, max_value=1.0, value=DEFAULT_SIMILARITY_THRESHOLD, step=0.01, format="%.1f")
+        top_k = st.number_input("Top K documents to retrieve", 
+                min_value=1, max_value=20, value=DEFAULT_TOP_K, step=1)
     
         use_reranking = st.checkbox("Re-rank retrieved documents", value=False)
         if use_reranking:
-            rerank_threshold = st.slider("Re-rank similarity threshold", 
-                min_value=0.0, max_value=1.0, value=DEFAULT_RERANK_THRESHOLD, step=0.01)
-            rerank_k = st.slider("Re-rank top K documents", 
+            rerank_threshold = st.number_input("Re-rank similarity threshold", 
+                min_value=0.0, max_value=1.0, value=DEFAULT_RERANK_THRESHOLD, step=0.01, format="%.1f")
+            rerank_k = st.number_input("Re-rank top K documents", 
                 min_value=1, max_value=20, value=DEFAULT_TOP_K, step=1)
     
     uploaded_files = st.file_uploader("Upload one or more txt/PDFs", type=["pdf", "txt"], accept_multiple_files=True)
 
     if uploaded_files:
-        chunk_size = st.slider("chunk size", min_value=100, max_value=1000, value=500, step=10)
-        chunk_overlap = st.slider("chunk overlap", min_value=10, max_value=1000, value=200, step=10)
+        chunk_size = st.number_input("chunk size", min_value=100, max_value=1000, value=500, step=10)
+        chunk_overlap = st.number_input("chunk overlap", min_value=10, max_value=1000, value=200, step=10)
+        related_tag = st.text_input("Related tag to add to each chunk", value="")
+
         if st.button("Add Documents"):
             with st.spinner("Indexing documents..."):
                 docs = []
@@ -363,6 +365,10 @@ with st.sidebar:
 
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
                 chunks = text_splitter.split_documents(docs)
+                
+                related_tag = related_tag.strip().replace("\n", " ")
+                if related_tag:
+                    for c in chunks: c.page_content = f"[Related:{related_tag}]\n{c.page_content}"
 
                 st.session_state.vector_store.add_documents(chunks)
                 os.makedirs(RAG_INDEX_DIR, exist_ok=True)           
