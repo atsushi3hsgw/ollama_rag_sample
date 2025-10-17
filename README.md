@@ -1,107 +1,89 @@
-# ollama_rag_sample
+# RAG Chatbot with File Upload (LangChain version)
 
-このリポジトリは OLLAMA とローカル埋め込みを組み合わせた RAG（Retrieval-Augmented Generation）実験サンプルです。
+This project is a sophisticated, containerized chatbot application that leverages the power of Retrieval-Augmented Generation (RAG) to answer questions based on a knowledge base of uploaded documents. It is built using Python, Streamlit, LangChain, and Ollama.
 
-docker コンテナで動作します。
-```mermaid
-graph TD;
-    A[chatbot container]　--- B[ollama container];
-```
+## Disclaimer
 
-## 概要
+This is an educational and demonstrational project. It is intended to showcase the implementation of a RAG chatbot using modern tools and is not meant for production use without further development and testing.
 
-- フロントエンド: Streamlit アプリ (app.py)  
-- 埋め込み: Sentence-Transformers  
-- 検索: FAISS (IndexFlatIP)  
-- LLM 実行: OLLAMA API 経由（`ollama_client.py`）  
-- ドキュメント処理: PDF/TXT 読み取り & スライディングウィンドウ（`rag_loader.py`）  
-- プロンプト管理: `prompts.yaml` にモデル別テンプレートを外部化
+## Features
 
-## クイックスタート
+* **Chatbot Interface:** A user-friendly, web-based chat interface built with Streamlit.
+* **Document Upload:** Supports uploading PDF and text files to build a dynamic knowledge base.
+* **Local LLM with Ollama:** Utilizes a local large language model via Ollama for text generation, ensuring privacy and control.
+* **RAG Pipeline:** Implements a full RAG pipeline with document loading, text splitting, embedding, and retrieval.
+* **Advanced Retrieval:**
+    * Uses FAISS for efficient similarity search.
+    * Includes an optional re-ranking step with a cross-encoder for improved accuracy.
+* **Query Expansion:** Enhances user queries for more relevant search results.
+* **Configurable:** Easily configurable through environment variables and a YAML file for prompts.
 
-1. リポジトリをクローンする  
-2. 必要に応じて .env を作成して OLLAMA_URL を設定する  
-3. `docker-compose up -d` でサービスを起動する（モデルは起動後に pull する）
-```bash
-例)
-docker exec -it ollama ollama pull gemma3
+## Architecture
 
-docker exec -it ollama ollama pull llama3
+The application is composed of two main services, orchestrated by Docker Compose:
 
-docker exec -it ollama ollama pull hf.co/mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf
-``` 
+* **`ollama`:** The backend service that runs the large language model. It uses the official `ollama/ollama` Docker image.
+* **`chatbot`:** The main application service that contains the Streamlit user interface and the RAG pipeline logic.
 
-4. Streamlit にアクセスしてファイルをアップロードし、RAG を試す
+## Setup and Installation
 
+### Prerequisites
 
-## 主要ファイル
+* Docker
+* Docker Compose
 
-- `app.py` — Streamlit UI、ファイルアップロード、Index構築、チャット  
-- `rag_loader.py` — PDF/TXT 読取、文分割、スライディングウィンドウ  
-- `ollama_client.py` — Ollama API 呼び出しラッパ  
-- `prompts.yaml` — モデル別テンプレート（template / empty_context / query_expansion）  
-- `Dockerfile.chatbot` / `Dockerfile.ollama` / `docker-compose.yml` — ローカル開発用  
-- `requirements.txt` — Python 依存パッケージ
+### Installation
 
-## 構造 
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/atsushi3hsgw/ollama_rag_sample.git
+    cd ollama_rag_sample
+    ```
 
-### コンポーネント
+2.  **Build and run the services:**
+    ```bash
+    docker-compose up --build
+    ```
 
-- Streamlit UI: モデル選択、RAG ON/OFF、Query Expansion ON/OFF 、Similarity Threshold(類似度)  
-- Chunker: 文分割 + スライディングウィンドウ（`rag_loader.py`）
-  - 文単位で分割し、スライディングウィンドウで重複を持たせて文脈保持を図る
-- Retriever: SentenceTransformer → FAISS IndexFlatIP 
-- LLM 層: `prompts.yaml` を読み込み `build_prompt` でプロンプト生成、`ollama_client.query_ollama` で実行
-  - テンプレート外部化によりモデル切替や A/B 実験がしやすい構造になっている
-  - `prompts.yaml` にモデル別テンプレートを外部化しており、`app.py` の `build_prompt` で model 名に応じて選択・置換しています。各モデルは次のフィールドを持ちます:
-    - `template` — 文脈ありのプロンプト  
-    - `empty_context` — 文脈がない場合のプロンプト  
-    - `query_expansion` — 検索用に質問を拡張するテンプレート（任意）
+3.  **Access the application:**
+    Open your web browser and navigate to `http://localhost:8501`.
 
-gemma3 日本語テンプレート（例）
+## Usage
 
-```yaml
-gemma3:
-  template: |
-    <|system|>
-    あなたは親切で有能なアシスタントです。
+1.  **Select a model:** Choose a model from the dropdown menu in the sidebar.
+2.  **Configure RAG settings:** Adjust the RAG settings in the sidebar to enable or disable features like query expansion and document retrieval.
+3.  **Upload documents:** Upload your PDF or text files to build the knowledge base. Click the "Add Documents" button to index them.
+4.  **Chat:** Ask questions in the chat input field. The chatbot will use the uploaded documents to provide answers.
 
-    <|user|>
-    以下の文脈を参考にして、質問に答えてください。
+## Configuration
 
-    文脈:
-    {{context}}
+### Docker Compose (`docker-compose.yml`)
 
-    質問:
-    {{query}}
+The `docker-compose.yml` file defines the services and their configurations. Key environment variables for the `chatbot` service include:
 
-  empty_context: |
-    <|system|>
-    あなたは親切で有能なアシスタントです。
+* `OLLAMA_URL`: The URL of the Ollama service.
+* `EMBEDDING_MODEL`: The Hugging Face model to use for text embeddings.
+* `RAG_INDEX_DIR`: The directory to store the RAG index.
+* `PROMPTS_PATH`: The path to the YAML file containing the prompts.
+* `CROSS_ENCODER_MODEL`: The Hugging Face cross-encoder model.
 
-    <|user|>
-    以下の質問に答えてください。
-    質問:
-    {{query}}
+### Prompts (`prompts_langchain.yml`)
 
-  query_expansion: |
-    <|system|>
-    あなたは親切で有能なアシスタントです。
+This file contains the prompts used by the LangChain chains for different tasks:
 
-    <|user|>
-    以下の質問を検索に適した形で意味的に拡張してください。
+* `query_expansion_messages`: Prompts for expanding user queries.
+* `rag_prompt_messages`: Prompts for the RAG chain.
+* `simple_prompt_messages`: Prompts for the simple, non-RAG chain.
 
-    質問: {{query}}
-```
+### Dependencies (`requirements.txt`)
 
-### データフロー
+The project's Python dependencies are listed in `requirements.txt`. These are installed when building the `chatbot` Docker image.
 
-1. 文書 → チャンク化 → 埋め込み → FAISS に格納  
-2. ユーザー質問 → Query Expansion（拡張）→ 埋め込み → top_k 検索 → threshold フィルタ
-  - チャンク境界や粒度、短いクエリが原因で検索精度が不安定になる。Query Expansion　で対応
-3. 上位結果をコンテキスト化してモデルに投げ、回答を取得
+### Dockerfiles
 
+* **`Dockerfile.ollama`:** The Dockerfile for the `ollama` service, based on the official `ollama/ollama` image.
+* **`Dockerfile.chatbot`:** The Dockerfile for the `chatbot` service. It uses a Python 3.11 base image, installs the dependencies, and runs the Streamlit application.
 
-## 免責と注意点
+## License
 
-- 実験用サンプルです。
+This project is freely available for personal and commercial use. You are welcome to use, modify, and distribute the code as you see fit. No warranty is expressed or implied.
