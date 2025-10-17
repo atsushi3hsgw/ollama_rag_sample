@@ -106,6 +106,15 @@ This file contains the prompts used by the LangChain chains for different tasks:
 
 The project's Python dependencies are listed in `requirements.txt`. These are installed when building the `chatbot` Docker image.
 
+- langchain                 0.3.27
+- langchain-community       0.3.31
+- langchain-core            0.3.79
+- langchain-huggingface     0.3.1
+- langchain-ollama          0.3.10
+- langchain-text-splitters  0.3.11
+- sentence-transformers     5.1.1
+- faiss-cpu                 1.12.0
+
 ### Dockerfiles
 
 * **`Dockerfile.ollama`:** The Dockerfile for the `ollama` service, based on the official `ollama/ollama` image.
