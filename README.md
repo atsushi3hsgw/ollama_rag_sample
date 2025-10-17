@@ -18,6 +18,26 @@ This is an educational and demonstrational project. It is intended to showcase t
 * **Query Expansion:** Enhances user queries for more relevant search results.
 * **Configurable:** Easily configurable through environment variables and a YAML file for prompts.
 
+```mermaid
+flowchart TD
+    A["user query"] --> B["Query Expansion（optional）"]
+    B --> C["Retriever"]
+    subgraph DocumentStore["Document Store"]
+        D1["chunk#1"]
+        D2["chunk#2"]
+        D3["chunk#3"]
+    end
+    C --> D1 & D2 & D3
+    D1 & D2 & D3 --> E["Reranker"]
+    E --> F["Top-k documents"]
+    F --> G["LLM"]
+    G --> H["reply"]
+
+    style D1 fill:#f9f,stroke:#333,stroke-width:1px
+    style D2 fill:#9ff,stroke:#333,stroke-width:1px
+    style D3 fill:#f9f,stroke:#333,stroke-width:1px
+```
+
 ## Architecture
 
 The application is composed of two main services, orchestrated by Docker Compose:
@@ -44,8 +64,15 @@ The application is composed of two main services, orchestrated by Docker Compose
     ```bash
     docker-compose up --build
     ```
+3.  **Pull the models:**
+    ```bash
+    examples)
+    docker exec -it ollama-container ollama pull gemma3
+    docker exec -it ollama-container ollama pull llama3
+    docker exec -it ollama-container ollama pull hf.co/mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf
+    ```
 
-3.  **Access the application:**
+4.  **Access the application:**
     Open your web browser and navigate to `http://localhost:8501`.
 
 ## Usage
